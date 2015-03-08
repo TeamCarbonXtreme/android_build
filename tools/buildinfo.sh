@@ -52,5 +52,6 @@ fi
 echo "ro.build.characteristics=$TARGET_AAPT_CHARACTERISTICS"
 
 echo "ro.cm.device=$CM_DEVICE"
+echo "ro.cxr.version=$ROM_VERSION"
 
 echo "# end build properties"
