@@ -51,7 +51,7 @@ if [ "$TARGET_UNIFIED_DEVICE" == "" ] ; then
 fi
 echo "ro.build.characteristics=$TARGET_AAPT_CHARACTERISTICS"
 
-echo "ro.cm.device=$CM_DEVICE"
+echo "ro.cxr.device=$CXR_DEVICE"
 echo "ro.cxr.version=$ROM_VERSION"
 
 echo "# end build properties"

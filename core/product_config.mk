@@ -180,7 +180,7 @@ include $(BUILD_SYSTEM)/product.mk
 include $(BUILD_SYSTEM)/device.mk
 
 # A CXR build needs only the CXR product makefiles.
-ifneq ($(CXE_BUILD),)
+ifneq ($(CXR_BUILD),)
   all_product_configs := $(shell ls device/*/$(CXR_BUILD)/cxr.mk)
 else
   ifneq ($(strip $(TARGET_BUILD_APPS)),)
