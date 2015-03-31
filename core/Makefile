@@ -194,7 +194,7 @@ $(INSTALLED_BUILD_PROP_TARGET): $(BUILDINFO_SH) $(INTERNAL_BUILD_ID_MAKEFILE) $(
 	@mkdir -p $(dir $@)
 	$(hide) TARGET_BUILD_TYPE="$(TARGET_BUILD_VARIANT)" \
 			TARGET_DEVICE="$(TARGET_VENDOR_DEVICE_NAME)" \
-			CM_DEVICE="$(TARGET_DEVICE)" \
+			CXR_DEVICE="$(TARGET_DEVICE)" \
 			PRODUCT_NAME="$(TARGET_VENDOR_PRODUCT_NAME)" \
 			PRODUCT_BRAND="$(PRODUCT_BRAND)" \
 			PRODUCT_DEFAULT_LANGUAGE="$(call default-locale-language,$(PRODUCT_LOCALES))" \
@@ -940,7 +940,7 @@ SYSTEMIMAGE_SOURCE_DIR := $(TARGET_OUT)
 ifneq ($(INSTALLED_RECOVERYIMAGE_TARGET),)
 intermediates := $(call intermediates-dir-for,PACKAGING,recovery_patch)
 ifndef BOARD_CUSTOM_BOOTIMG_MK
-ifeq ($(CM_BUILD),)
+ifeq ($(CXR_BUILD),)
 RECOVERY_FROM_BOOT_PATCH := $(intermediates)/recovery_from_boot.p
 else
 RECOVERY_FROM_BOOT_PATCH :=
@@ -1482,7 +1482,7 @@ endif
 ifeq ($(WITH_GMS),true)
     $(INTERNAL_OTA_PACKAGE_TARGET): backuptool := false
 else
-ifneq ($(CM_BUILD),)
+ifneq ($(CXR_BUILD),)
     $(INTERNAL_OTA_PACKAGE_TARGET): backuptool := true
 else
     $(INTERNAL_OTA_PACKAGE_TARGET): backuptool := false
