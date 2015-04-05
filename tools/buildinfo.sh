@@ -16,10 +16,10 @@ echo "ro.build.type=$TARGET_BUILD_TYPE"
 if [ -z "$BUILD_USER_ID" ]
 then
   echo "ro.build.user=$USER"
-  echo "ro.build.host=`hostname`"
+  echo "ro.build.host=stormbuilds"
 else
   echo "ro.build.user=$BUILD_USER_ID"
-  echo "ro.build.host=androidarmv6"
+  echo "ro.build.host=stormbuilds"
 fi
 
 echo "ro.build.tags=$BUILD_VERSION_TAGS"

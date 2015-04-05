@@ -57,13 +57,11 @@ PRODUCT_PACKAGES += \
     make_ext4fs \
     screencap \
     sensorservice \
-    uiautomator \
-    uncrypt
+    uiautomator
 
-#PRODUCT_BOOT_JARS := core:conscrypt:okhttp:core-junit:bouncycastle:ext:framework:framework2:android.policy:services:apache-xml:webviewchromium
-PRODUCT_BOOT_JARS := core:conscrypt:okhttp:core-junit:bouncycastle:ext:framework:framework2:android.policy:services:apache-xml
+PRODUCT_BOOT_JARS := core:conscrypt:okhttp:core-junit:bouncycastle:ext:framework:framework2:android.policy:services:apache-xml:webviewchromium
 
 PRODUCT_RUNTIMES := runtime_libdvm_default
-#PRODUCT_RUNTIMES += runtime_libart
+PRODUCT_RUNTIMES += runtime_libart
 
 $(call inherit-product, $(SRC_TARGET_DIR)/product/base.mk)
