@@ -25,6 +25,7 @@ PRODUCT_PACKAGES := \
 	FusedLocation \
 	Gallery2 \
 	Keyguard \
+	Apollo \
 	Mms \
 	OpenWnn \
 	PrintSpooler \
@@ -36,7 +37,7 @@ PRODUCT_PACKAGES := \
 	libjni_pinyinime \
 	SoftKeyboard \
 	SystemUI \
-	Launcher3 \
+	Trebuchet \
 	Development \
 	DevelopmentSettings \
 	Fallback \
@@ -51,6 +52,7 @@ PRODUCT_PACKAGES := \
 	ApiDemos \
 	GestureBuilder \
 	CubeLiveWallpapers \
+	QuickSearchBox \
 	WidgetPreview \
 	librs_jni \
 	ConnectivityTest \

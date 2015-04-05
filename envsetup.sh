@@ -16,10 +16,11 @@ Invoke ". build/envsetup.sh" from your shell to add the following functions to y
 - jgrep:   Greps on all local Java files.
 - resgrep: Greps on all local res/*.xml files.
 - godir:   Go to the directory containing a file.
-- crremote: Add git remote for Carbon Gerrit Review.
-- crrebase: Rebase a Gerrit change and push it again.
-- aospremote: Add git remote for matching AOSP repository.
-- cafremote: Add git remote for matching CodeAurora repository.
+- cmremote: Add git remote for CM Gerrit Review.
+- cmgerrit: A Git wrapper that fetches/pushes patch from/to CM Gerrit Review.
+- cmrebase: Rebase a Gerrit change and push it again.
+- aosp:     Add git remote for matching AOSP repository.
+- caf:      Add git remote for matching CodeAurora repository.
 - mka:      Builds using SCHED_BATCH on all processors.
 - mkap:     Builds the module(s) using mka and pushes them to the device.
 - cmka:     Cleans and builds using mka.
@@ -73,13 +74,13 @@ function check_product()
         return
     fi
 
-    if (echo -n $1 | grep -q -e "^carbon_") ; then
-       CARBON_BUILD=$(echo -n $1 | sed -e 's/^carbon_//g')
-       export BUILD_NUMBER=$((date +%s%N ; echo $CARBON_BUILD; hostname) | openssl sha1 | sed -e 's/.*=//g; s/ //g' | cut -c1-10)
+    if (echo -n $1 | grep -q -e "^cm_") ; then
+       CM_BUILD=$(echo -n $1 | sed -e 's/^cm_//g')
+       export BUILD_NUMBER=$((date +%s%N ; echo $CM_BUILD; hostname) | openssl sha1 | sed -e 's/.*=//g; s/ //g' | cut -c1-10)
     else
-       CARBON_BUILD=
+       CM_BUILD=
     fi
-    export CARBON_BUILD
+    export CM_BUILD
 
     CALLED_FROM_SETUP=true BUILD_SYSTEM=build/core \
         TARGET_PRODUCT=$1 \
@@ -227,9 +228,6 @@ function set_stuff_for_environment()
     set_java_home
     setpaths
     set_sequence_number
-
-    # With this environment variable new GCC can apply colors to warnings/errors
-    export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
 }
 
 function set_sequence_number()
@@ -457,6 +455,12 @@ function add_lunch_combo()
     LUNCH_MENU_CHOICES=(${LUNCH_MENU_CHOICES[@]} $new_combo)
 }
 
+# add the default one here
+add_lunch_combo aosp_arm-eng
+add_lunch_combo aosp_x86-eng
+add_lunch_combo aosp_mips-eng
+add_lunch_combo vbox_x86-eng
+
 function print_lunch_menu()
 {
     local uname=$(uname)
@@ -466,7 +470,7 @@ function print_lunch_menu()
        echo "  (ohai, koush!)"
     fi
     echo
-    if [ "z${CARBON_DEVICES_ONLY}" != "z" ]; then
+    if [ "z${CM_DEVICES_ONLY}" != "z" ]; then
        echo "Breakfast menu... pick a combo:"
     else
        echo "Lunch menu... pick a combo:"
@@ -480,7 +484,7 @@ function print_lunch_menu()
         i=$(($i+1))
     done | column
 
-    if [ "z${CARBON_DEVICES_ONLY}" != "z" ]; then
+    if [ "z${CM_DEVICES_ONLY}" != "z" ]; then
        echo "... and don't forget the bacon!"
     fi
 
@@ -491,7 +495,7 @@ function brunch()
 {
     breakfast $*
     if [ $? -eq 0 ]; then
-        time mka carbon
+        mka bacon
     else
         echo "No such item in brunch menu. Try 'breakfast'"
         return 1
@@ -503,10 +507,10 @@ function breakfast()
 {
     target=$1
     local variant=$2
-    CARBON_DEVICES_ONLY="true"
+    CM_DEVICES_ONLY="true"
     unset LUNCH_MENU_CHOICES
     add_lunch_combo full-eng
-    for f in `/bin/ls vendor/carbon/vendorsetup.sh 2> /dev/null`
+    for f in `/bin/ls vendor/cm/vendorsetup.sh 2> /dev/null`
         do
             echo "including $f"
             . $f
@@ -522,11 +526,11 @@ function breakfast()
             # A buildtype was specified, assume a full device name
             lunch $target
         else
-            # This is probably just the Carbon model name
+            # This is probably just the CM model name
             if [ -z "$variant" ]; then
                 variant="userdebug"
             fi
-            lunch carbon_$target-$variant
+            lunch cm_$target-$variant
         fi
     fi
     return $?
@@ -542,7 +546,7 @@ function lunch()
         answer=$1
     else
         print_lunch_menu
-        echo -n "Which would you like? [full-eng] "
+        echo -n "Which would you like? [aosp_arm-eng] "
         read answer
     fi
 
@@ -550,7 +554,7 @@ function lunch()
 
     if [ -z "$answer" ]
     then
-        selection=full-eng
+        selection=aosp_arm-eng
     elif (echo -n $answer | grep -q -e "^[0-9][0-9]*$")
     then
         if [ $answer -le ${#LUNCH_MENU_CHOICES[@]} ]
@@ -575,17 +579,14 @@ function lunch()
     check_product $product
     if [ $? -ne 0 ]
     then
-        # if we can't find the product, try to grab it from our github
+        # if we can't find a product, try to grab it off the CM github
         T=$(gettop)
         pushd $T > /dev/null
         build/tools/roomservice.py $product
         popd > /dev/null
         check_product $product
     else
-        T=$(gettop)
-        pushd $T > /dev/null
         build/tools/roomservice.py $product true
-        popd > /dev/null
     fi
     if [ $? -ne 0 ]
     then
@@ -678,8 +679,8 @@ function tapas()
 function eat()
 {
     if [ "$OUT" ] ; then
-        MODVERSION=$(get_build_var CARBON_VERSION)
-        ZIPFILE=carbon-$MODVERSION.zip
+        MODVERSION=$(get_build_var CM_VERSION)
+        ZIPFILE=cm-$MODVERSION.zip
         ZIPPATH=$OUT/$ZIPFILE
         if [ ! -f $ZIPPATH ] ; then
             echo "Nothing to eat"
@@ -694,7 +695,7 @@ function eat()
             done
             echo "Device Found.."
         fi
-    if (adb shell cat /system/build.prop | grep -q "ro.carbon.device=$CARBON_BUILD");
+    if (adb shell cat /system/build.prop | grep -q "ro.cm.device=$CM_BUILD");
     then
         # if adbd isn't root we can't write to /cache/recovery/
         adb root
@@ -723,7 +724,7 @@ EOF
     fi
     return $?
     else
-        echo "The connected device does not appear to be $CARBON_BUILD, run away!"
+        echo "The connected device does not appear to be $CM_BUILD, run away!"
     fi
 }
 
@@ -1131,7 +1132,7 @@ function gdbclient()
        fi
 
        echo >|"$OUT_ROOT/gdbclient.cmds" "set solib-absolute-prefix $OUT_SYMBOLS"
-       echo >>"$OUT_ROOT/gdbclient.cmds" "set solib-search-path $OUT_SO_SYMBOLS:$OUT_SO_SYMBOLS/hw:$OUT_SO_SYMBOLS/ssl/engines:$OUT_SO_SYMBOLS/drm:$OUT_SO_SYMBOLS/egl:$OUT_SO_SYMBOLS/soundfx"
+       echo >>"$OUT_ROOT/gdbclient.cmds" "set solib-search-path $OUT_SO_SYMBOLS:$OUT_SO_SYMBOLS/hw:$OUT_SO_SYMBOLS/ssl/engines:$OUT_SO_SYMBOLS/drm:$OUT_SO_SYMBOLS/egl:$OUT_SO_SYMBOLS/soundfx:$OUT_SYMBOLS/system/vendor/lib/hw"
        echo >>"$OUT_ROOT/gdbclient.cmds" "source $ANDROID_BUILD_TOP/development/scripts/gdb/dalvik.gdb"
        echo >>"$OUT_ROOT/gdbclient.cmds" "target remote $PORT"
        echo >>"$OUT_ROOT/gdbclient.cmds" ""
@@ -1471,76 +1472,97 @@ function godir () {
     \cd $T/$pathname
 }
 
-function crremote()
+function cmremote()
 {
-    git remote rm crremote 2> /dev/null
+    git remote rm cmremote 2> /dev/null
     if [ ! -d .git ]
     then
         echo .git directory not found. Please run this from the root directory of the Android repository you wish to set up.
     fi
-    GERRIT_REMOTE=$(cat .git/config  | grep git://github.com | awk '{ print $NF }' | sed s#git://github.com/##g)
+    GERRIT_REMOTE=$(cat .git/config | grep git://github.com/androidarmv6 | awk '{ print $NF }' | sed s#git://github.com/##g)
     if [ -z "$GERRIT_REMOTE" ]
     then
-        GERRIT_REMOTE=$(cat .git/config  | grep http://github.com | awk '{ print $NF }' | sed s#http://github.com/##g)
+        GERRIT_REMOTE=$(cat .git/config | grep http://github.com/androidarmv6 | awk '{ print $NF }' | sed s#http://github.com/##g)
         if [ -z "$GERRIT_REMOTE" ]
         then
           echo Unable to set up the git remote, are you in the root of the repo?
           return 0
         fi
     fi
-    CRUSER=`git config --get review.review.carbonrom.org.username`
-    if [ -z "$CRUSER" ]
+    CMUSER=`git config --get review.review.androidarmv6.org.username`
+    if [ -z "$CMUSER" ]
     then
-        git remote add crremote ssh://review.carbonrom.org:29418/$GERRIT_REMOTE
+        git remote add cmremote ssh://review.androidarmv6.org:29418/$GERRIT_REMOTE
     else
-        git remote add crremote ssh://$CRUSER@review.carbonrom.org:29418/$GERRIT_REMOTE
+        git remote add cmremote ssh://$CMUSER@review.androidarmv6.org:29418/$GERRIT_REMOTE
     fi
-    echo You can now push to "crremote".
+    echo You can now push to "cmremote".
 }
-export -f crremote
+export -f cmremote
 
-function crrebase() {
-    local repo=$1
-    local refs=$2
-    local pwd="$(pwd)"
-    local dir="$(gettop)/$repo"
-
-    if [ -z $repo ] || [ -z $refs ]; then
-        echo "CarbonRom Gerrit Rebase Usage: "
-        echo "      crrebase <path to project> <patch IDs on Gerrit>"
-        echo "      The patch IDs appear on the Gerrit commands that are offered."
-        echo "      They consist on a series of numbers and slashes, after the text"
-        echo "      refs/changes. For example, the ID in the following command is 26/8126/2"
-        echo ""
-        echo "      git[...]ges_apps_Camera refs/changes/26/8126/2 && git cherry-pick FETCH_HEAD"
-        echo ""
-        return
+function upstream()
+{
+    git remote rm upstream 2> /dev/null
+    if [ ! -d .git ]
+    then
+        echo .git directory not found. Please run this from the root directory of the Android repository you wish to set up.
     fi
-
-    if [ ! -d $dir ]; then
-        echo "Directory $dir doesn't exist in tree."
-        return
+    GERRIT_REMOTE=$(cat .git/config | grep git://github.com/androidarmv6 | awk '{ print $NF }' | sed s#git://github.com/##g)
+    if [ -z "$GERRIT_REMOTE" ]
+    then
+        GERRIT_REMOTE=$(cat .git/config | grep http://github.com/androidarmv6 | awk '{ print $NF }' | sed s#http://github.com/##g)
+        if [ -z "$GERRIT_REMOTE" ]
+        then
+          echo Unable to set up the git remote, are you in the root of the repo?
+          return 0
+        fi
     fi
-    cd $dir
-    repo=$(cat .git/config  | grep git://github.com | awk '{ print $NF }' | sed s#git://github.com/##g)
-    echo "Starting branch..."
-    repo start tmprebase .
-    echo "Bringing it up to date..."
-    repo sync .
-    echo "Fetching change..."
-    git fetch "http://review.carbonrom.org/p/$repo" "refs/changes/$refs" && git cherry-pick FETCH_HEAD
-    if [ "$?" != "0" ]; then
-        echo "Error cherry-picking. Not uploading!"
-        return
-    fi
-    echo "Uploading..."
-    repo upload .
-    echo "Cleaning up..."
-    repo abandon tmprebase .
-    cd $pwd
+    GERRIT_REMOTE=$(echo $GERRIT_REMOTE | grep androidarmv6 | awk '{ print $NF }' | sed s#androidarmv6#CyanogenMod#g)
+    git remote add upstream git://github.com/$GERRIT_REMOTE.git
+    echo You can now fetch from "upstream".
 }
+export -f upstream
 
-function aospremote()
+function githubssh()
+{
+    git remote rm githubssh 2> /dev/null
+    if [ ! -d .git ]
+    then
+        echo .git directory not found. Please run this from the root directory of the Android repository you wish to set up.
+    fi
+    GERRIT_REMOTE=$(cat .git/config | grep git://github.com/androidarmv6 | awk '{ print $NF }' | sed s#git://github.com/##g)
+    if [ -z "$GERRIT_REMOTE" ]
+    then
+        GERRIT_REMOTE=$(cat .git/config | grep http://github.com/androidarmv6 | awk '{ print $NF }' | sed s#http://github.com/##g)
+        if [ -z "$GERRIT_REMOTE" ]
+        then
+          echo Unable to set up the git remote, are you in the root of the repo?
+          return 0
+        fi
+    fi
+    git remote add githubssh git@github.com:$GERRIT_REMOTE.git
+    echo You can now push to "githubssh".
+}
+export -f githubssh
+
+function caf()
+{
+    git remote rm caf 2> /dev/null
+    if [ ! -d .git ]
+    then
+        echo .git directory not found. Please run this from the root directory of the Android repository you wish to set up.
+    fi
+    PROJECT=`pwd -P | sed s#$ANDROID_BUILD_TOP/##g`
+    if (echo $PROJECT | grep -qv "^device")
+    then
+        PFX="platform/"
+    fi
+    git remote add caf git://codeaurora.org/$PFX$PROJECT.git
+    echo "Remote 'caf' created"
+}
+export -f caf
+
+function aosp()
 {
     git remote rm aosp 2> /dev/null
     if [ ! -d .git ]
@@ -1555,22 +1577,263 @@ function aospremote()
     git remote add aosp https://android.googlesource.com/$PFX$PROJECT
     echo "Remote 'aosp' created"
 }
+export -f aosp
 
-function cafremote()
-{
-    git remote rm caf 2> /dev/null
+function updatenotes() {
     if [ ! -d .git ]
     then
         echo .git directory not found. Please run this from the root directory of the Android repository you wish to set up.
     fi
-    PROJECT=`pwd -P | sed s#$ANDROID_BUILD_TOP/##g`
-    if (echo $PROJECT | grep -qv "^device")
+    GERRIT_REMOTE=$(cat .git/config | grep git://github.com/androidarmv6 | awk '{ print $NF }' | sed s#git://github.com/##g)
+    if [ -z "$GERRIT_REMOTE" ]
     then
-        PFX="platform/"
+        GERRIT_REMOTE=$(cat .git/config | grep http://github.com/androidarmv6 | awk '{ print $NF }' | sed s#http://github.com/##g)
+        if [ -z "$GERRIT_REMOTE" ]
+        then
+          return 0
+        fi
     fi
-    git remote add caf git://codeaurora.org/$PFX$PROJECT
-    echo "Remote 'caf' created"
+    pwd
+    cmremote
+    githubssh
+    git fetch cmremote refs/notes/review:refs/notes/review
+    git push githubssh refs/notes/review:refs/notes/review
+    echo "All notes were updated."
 }
+export -f updatenotes
+
+function updateallnotes() {
+  repo forall -c '
+  if [ "$REPO_REMOTE" == "github" ]
+  then
+    updatenotes
+  fi
+  '
+}
+export -f updateallnotes
+
+# Examples:
+# mergeupstream
+# mergeupstream caf jb_2.5
+# mergeupstream aosp android-4.2.2_r1.2
+function mergeupstream() {
+    if [ ! -d .git ]
+    then
+        echo .git directory not found. Please run this from the root directory of the Android repository you wish to set up.
+    fi
+    GERRIT_REMOTE=$(cat .git/config | grep git://github.com/androidarmv6 | awk '{ print $NF }' | sed s#git://github.com/##g)
+    if [ -z "$GERRIT_REMOTE" ]
+    then
+        GERRIT_REMOTE=$(cat .git/config | grep http://github.com/androidarmv6 | awk '{ print $NF }' | sed s#http://github.com/##g)
+        if [ -z "$GERRIT_REMOTE" ]
+        then
+          return 0
+        fi
+    fi
+
+    UPSTREAM="upstream"
+    R_BRANCH="cm-11.0"
+    if [ ! -z "$1" ]
+    then
+        UPSTREAM=$1
+        $UPSTREAM
+    else
+        upstream
+    fi
+
+    if [ ! -z "$2" ]
+    then
+        R_BRANCH=$2
+    fi
+
+    pwd
+    #skip github
+    #githubssh
+    cmremote
+    repo sync . 2> /dev/null
+    git reset --hard 2> /dev/null
+    git clean -fd 2> /dev/null
+    repo sync . 2> /dev/null
+    git remote update 2> /dev/null
+    repo sync . 2> /dev/null
+    repo abandon cm-11.0 . 2> /dev/null
+    repo start cm-11.0 . 2> /dev/null
+    git merge $UPSTREAM/$R_BRANCH
+    git push cmremote cm-11.0
+    # git push cmremote(gerrit) updates github, no need manually update
+    # git push githubssh cm-11.0
+    echo "Upstream ($UPSTREAM/$R_BRANCH) changes have been merged."
+}
+export -f mergeupstream
+
+function mergeupstreamall() {
+  repo forall -c '
+  if [ "$REPO_REMOTE" == "github" ]
+  then
+    mergeupstream
+  fi
+  '
+}
+export -f mergeupstreamall
+
+# tag cm-11.0-20130501
+function tag() {
+    if [ ! -d .git ]
+    then
+        echo .git directory not found. Please run this from the root directory of the Android repository you wish to set up.
+    fi
+    GERRIT_REMOTE=$(cat .git/config | grep git://github.com/androidarmv6 | awk '{ print $NF }' | sed s#git://github.com/##g)
+    if [ -z "$GERRIT_REMOTE" ]
+    then
+        GERRIT_REMOTE=$(cat .git/config | grep http://github.com/androidarmv6 | awk '{ print $NF }' | sed s#http://github.com/##g)
+        if [ -z "$GERRIT_REMOTE" ]
+        then
+          return 0
+        fi
+    fi
+    if [ -z "$1" ]
+    then
+      echo Tag must be specified.
+      return 0
+    fi
+    R_TAG=$1
+    cmremote
+    git tag -d $R_TAG
+    git tag -a $R_TAG -m "$R_TAG"
+    git push -f cmremote $R_TAG
+    echo "Tagged: $R_TAG"
+}
+export -f tag
+
+# tagall cm-11.0-RC2 cm-11.0
+function tagall() {
+    if [ ! -d android ]
+    then
+      echo android directory not found.
+      return 0
+    fi
+    if [ -z "$1" ]
+    then
+      echo Tag must be specified...
+      return 0
+    fi
+    if [ -z "$2" ]
+    then
+      echo Branch must be specified...
+      return 0
+    fi
+    export R_TAG=$1
+    R_BRANCH=$2
+    # Remove local manifests to build the core manifest
+    rm -fr .repo/local_manifests
+    repo sync -j4
+    cd android
+    cmremote
+    git remote update
+    repo abandon $R_BRANCH .
+    repo start $R_BRANCH .
+    cd ../
+    # Create tags without android folder
+    repo forall -c '
+    if [[ "$REPO_REMOTE" == "github" && "$REPO_PATH" != "android" ]]
+    then
+      tag $R_TAG
+    fi
+    '
+    # Create manifest
+    repo manifest -o android/manifests/$R_TAG.xml -r
+    cd android
+    git add manifests/$R_TAG.xml
+    git commit -m "manifests/$R_TAG.xml"
+    git push cmremote $R_BRANCH
+    sleep 5
+    git tag -a $R_TAG -m "$R_TAG"
+    git push -f cmremote $R_TAG
+    cd ../
+    sleep 20
+    repo sync -j4
+    echo "MANIFEST: android/manifests/$R_TAG.xml"
+}
+export -f tagall
+
+# Create tracking branches to compare upstream changes
+# Examples:
+# updateupstream
+# updateupstream caf kitkat
+# updateupstream aosp kitkat-release
+function updateupstream() {
+    if [ ! -d .git ]
+    then
+        echo .git directory not found. Please run this from the root directory of the Android repository you wish to set up.
+    fi
+    GERRIT_REMOTE=$(cat .git/config | grep git://github.com/androidarmv6 | awk '{ print $NF }' | sed s#git://github.com/##g)
+    if [ -z "$GERRIT_REMOTE" ]
+    then
+        GERRIT_REMOTE=$(cat .git/config | grep http://github.com/androidarmv6 | awk '{ print $NF }' | sed s#http://github.com/##g)
+        if [ -z "$GERRIT_REMOTE" ]
+        then
+          return 0
+        fi
+    fi
+
+    UPSTREAM="upstream"
+    R_BRANCH="cm-11.0"
+    if [ ! -z "$1" ]
+    then
+        UPSTREAM=$1
+        $UPSTREAM
+    else
+        upstream
+    fi
+
+    if [ ! -z "$2" ]
+    then
+        R_BRANCH=$2
+    fi
+
+    pwd
+    cmremote
+    repo sync . 2> /dev/null
+    git reset --hard 2> /dev/null
+    git clean -fdx 2> /dev/null
+    repo sync . 2> /dev/null
+    git fetch $UPSTREAM refs/heads/$R_BRANCH:refs/heads/$R_BRANCH
+    repo abandon $UPSTREAM/$R_BRANCH . 2> /dev/null
+    git branch $UPSTREAM/$R_BRANCH refs/heads/$R_BRANCH
+    git push cmremote $UPSTREAM/$R_BRANCH:refs/heads/$UPSTREAM/$R_BRANCH
+    repo abandon $UPSTREAM/$R_BRANCH . 2> /dev/null
+    echo "Upstream ($UPSTREAM/$R_BRANCH) updated."
+}
+export -f updateupstream
+
+
+function updateupstreamall() {
+    if [ ! -d android ]
+    then
+      echo android directory not found.
+      return 0
+    fi
+    if [ -z "$1" ]
+    then
+      echo Remote must be specified...
+      return 0
+    fi
+    if [ -z "$2" ]
+    then
+      echo Branch must be specified...
+      return 0
+    fi
+    export R_REMOTE=$1
+    export R_BRANCH=$2
+
+    repo forall -c '
+    if [[ "$REPO_REMOTE" == "github" ]]
+    then
+      updateupstream $R_REMOTE $R_BRANCH
+    fi
+    '
+}
+export -f updateupstreamall
 
 function installboot()
 {
@@ -1603,7 +1866,7 @@ function installboot()
     sleep 1
     adb wait-for-online shell mount /system 2>&1 > /dev/null
     adb wait-for-online remount
-    if (adb shell cat /system/build.prop | grep -q "ro.carbon.device=$CARBON_BUILD");
+    if (adb shell cat /system/build.prop | grep -q "ro.cm.device=$CM_BUILD");
     then
         adb push $OUT/boot.img /cache/
         for i in $OUT/system/lib/modules/*;
@@ -1619,7 +1882,7 @@ function installboot()
         adb shell chmod 644 /system/lib/modules/*
         echo "Installation complete."
     else
-        echo "The connected device does not appear to be $CARBON_BUILD, run away!"
+        echo "The connected device does not appear to be $CM_BUILD, run away!"
     fi
 }
 
@@ -1653,14 +1916,317 @@ function installrecovery()
     sleep 1
     adb wait-for-online shell mount /system 2>&1 >> /dev/null
     adb wait-for-online remount
-    if (adb shell cat /system/build.prop | grep -q "ro.carbon.device=$CARBON_BUILD");
+    if (adb shell cat /system/build.prop | grep -q "ro.cm.device=$CM_BUILD");
     then
         adb push $OUT/recovery.img /cache/
         adb shell dd if=/cache/recovery.img of=$PARTITION
         echo "Installation complete."
     else
-        echo "The connected device does not appear to be $CARBON_BUILD, run away!"
+        echo "The connected device does not appear to be $CM_BUILD, run away!"
     fi
+}
+
+function makerecipe() {
+  if [ -z "$1" ]
+  then
+    echo "No branch name provided."
+    return 1
+  fi
+  cd .repo
+  mv local_manifest.xml local_manifest.xml.bak
+  cd ..
+  cd android
+  sed -i s/'default revision=.*'/'default revision="refs\/heads\/'$1'"'/ default.xml
+  git commit -a -m "$1"
+  cd ..
+
+  repo forall -c '
+
+  if [ "$REPO_REMOTE" == "github" ]
+  then
+    pwd
+    cmremote
+    git push cmremote HEAD:refs/heads/'$1'
+  fi
+  '
+
+  cd .repo
+  mv local_manifest.xml.bak local_manifest.xml
+  cd ..
+}
+
+function cmgerrit() {
+    if [ $# -eq 0 ]; then
+        $FUNCNAME help
+        return 1
+    fi
+    local user=`git config --get review.review.androidarmv6.org.username`
+    local review=`git config --get remote.github.review`
+    local project=`git config --get remote.github.projectname`
+    local command=$1
+    shift
+    case $command in
+        help)
+            if [ $# -eq 0 ]; then
+                cat <<EOF
+Usage:
+    $FUNCNAME COMMAND [OPTIONS] [CHANGE-ID[/PATCH-SET]][{@|^|~|:}ARG] [-- ARGS]
+
+Commands:
+    fetch   Just fetch the change as FETCH_HEAD
+    help    Show this help, or for a specific command
+    pull    Pull a change into current branch
+    push    Push HEAD or a local branch to Gerrit for a specific branch
+
+Any other Git commands that support refname would work as:
+    git fetch URL CHANGE && git COMMAND OPTIONS FETCH_HEAD{@|^|~|:}ARG -- ARGS
+
+See '$FUNCNAME help COMMAND' for more information on a specific command.
+
+Example:
+    $FUNCNAME checkout -b topic 1234/5
+works as:
+    git fetch http://DOMAIN/p/PROJECT refs/changes/34/1234/5 \\
+      && git checkout -b topic FETCH_HEAD
+will checkout a new branch 'topic' base on patch-set 5 of change 1234.
+Patch-set 1 will be fetched if omitted.
+EOF
+                return
+            fi
+            case $1 in
+                __cmg_*) echo "For internal use only." ;;
+                changes|for)
+                    if [ "$FUNCNAME" = "cmgerrit" ]; then
+                        echo "'$FUNCNAME $1' is deprecated."
+                    fi
+                    ;;
+                help) $FUNCNAME help ;;
+                fetch|pull) cat <<EOF
+usage: $FUNCNAME $1 [OPTIONS] CHANGE-ID[/PATCH-SET]
+
+works as:
+    git $1 OPTIONS http://DOMAIN/p/PROJECT \\
+      refs/changes/HASH/CHANGE-ID/{PATCH-SET|1}
+
+Example:
+    $FUNCNAME $1 1234
+will $1 patch-set 1 of change 1234
+EOF
+                    ;;
+                push) cat <<EOF
+usage: $FUNCNAME push [OPTIONS] [LOCAL_BRANCH:]REMOTE_BRANCH
+
+works as:
+    git push OPTIONS ssh://USER@DOMAIN:29418/PROJECT \\
+      {LOCAL_BRANCH|HEAD}:refs/for/REMOTE_BRANCH
+
+Example:
+    $FUNCNAME push fix6789:gingerbread
+will push local branch 'fix6789' to Gerrit for branch 'gingerbread'.
+HEAD will be pushed from local if omitted.
+EOF
+                    ;;
+                *)
+                    $FUNCNAME __cmg_err_not_supported $1 && return
+                    cat <<EOF
+usage: $FUNCNAME $1 [OPTIONS] CHANGE-ID[/PATCH-SET][{@|^|~|:}ARG] [-- ARGS]
+
+works as:
+    git fetch http://DOMAIN/p/PROJECT \\
+      refs/changes/HASH/CHANGE-ID/{PATCH-SET|1} \\
+      && git $1 OPTIONS FETCH_HEAD{@|^|~|:}ARG -- ARGS
+EOF
+                    ;;
+            esac
+            ;;
+        __cmg_get_ref)
+            $FUNCNAME __cmg_err_no_arg $command $# && return 1
+            local change_id patchset_id hash
+            case $1 in
+                */*)
+                    change_id=${1%%/*}
+                    patchset_id=${1#*/}
+                    ;;
+                *)
+                    change_id=$1
+                    patchset_id=1
+                    ;;
+            esac
+            hash=$(($change_id % 100))
+            case $hash in
+                [0-9]) hash="0$hash" ;;
+            esac
+            echo "refs/changes/$hash/$change_id/$patchset_id"
+            ;;
+        fetch|pull)
+            $FUNCNAME __cmg_err_no_arg $command $# help && return 1
+            $FUNCNAME __cmg_err_not_repo && return 1
+            local change=$1
+            shift
+            git $command $@ http://$review/p/$project \
+                $($FUNCNAME __cmg_get_ref $change) || return 1
+            ;;
+        push)
+            $FUNCNAME __cmg_err_no_arg $command $# help && return 1
+            $FUNCNAME __cmg_err_not_repo && return 1
+            if [ -z "$user" ]; then
+                echo >&2 "Gerrit username not found."
+                return 1
+            fi
+            local local_branch remote_branch
+            case $1 in
+                *:*)
+                    local_branch=${1%:*}
+                    remote_branch=${1##*:}
+                    ;;
+                *)
+                    local_branch=HEAD
+                    remote_branch=$1
+                    ;;
+            esac
+            shift
+            git push $@ ssh://$user@$review:29418/$project \
+                $local_branch:refs/for/$remote_branch || return 1
+            ;;
+        changes|for)
+            if [ "$FUNCNAME" = "cmgerrit" ]; then
+                echo >&2 "'$FUNCNAME $command' is deprecated."
+            fi
+            ;;
+        __cmg_err_no_arg)
+            if [ $# -lt 2 ]; then
+                echo >&2 "'$FUNCNAME $command' missing argument."
+            elif [ $2 -eq 0 ]; then
+                if [ -n "$3" ]; then
+                    $FUNCNAME help $1
+                else
+                    echo >&2 "'$FUNCNAME $1' missing argument."
+                fi
+            else
+                return 1
+            fi
+            ;;
+        __cmg_err_not_repo)
+            if [ -z "$review" -o -z "$project" ]; then
+                echo >&2 "Not currently in any reviewable repository."
+            else
+                return 1
+            fi
+            ;;
+        __cmg_err_not_supported)
+            $FUNCNAME __cmg_err_no_arg $command $# && return
+            case $1 in
+                #TODO: filter more git commands that don't use refname
+                init|add|rm|mv|status|clone|remote|bisect|config|stash)
+                    echo >&2 "'$FUNCNAME $1' is not supported."
+                    ;;
+                *) return 1 ;;
+            esac
+            ;;
+    #TODO: other special cases?
+        *)
+            $FUNCNAME __cmg_err_not_supported $command && return 1
+            $FUNCNAME __cmg_err_no_arg $command $# help && return 1
+            $FUNCNAME __cmg_err_not_repo && return 1
+            local args="$@"
+            local change pre_args refs_arg post_args
+            case "$args" in
+                *--\ *)
+                    pre_args=${args%%-- *}
+                    post_args="-- ${args#*-- }"
+                    ;;
+                *) pre_args="$args" ;;
+            esac
+            args=($pre_args)
+            pre_args=
+            if [ ${#args[@]} -gt 0 ]; then
+                change=${args[${#args[@]}-1]}
+            fi
+            if [ ${#args[@]} -gt 1 ]; then
+                pre_args=${args[0]}
+                for ((i=1; i<${#args[@]}-1; i++)); do
+                    pre_args="$pre_args ${args[$i]}"
+                done
+            fi
+            while ((1)); do
+                case $change in
+                    ""|--)
+                        $FUNCNAME help $command
+                        return 1
+                        ;;
+                    *@*)
+                        if [ -z "$refs_arg" ]; then
+                            refs_arg="@${change#*@}"
+                            change=${change%%@*}
+                        fi
+                        ;;
+                    *~*)
+                        if [ -z "$refs_arg" ]; then
+                            refs_arg="~${change#*~}"
+                            change=${change%%~*}
+                        fi
+                        ;;
+                    *^*)
+                        if [ -z "$refs_arg" ]; then
+                            refs_arg="^${change#*^}"
+                            change=${change%%^*}
+                        fi
+                        ;;
+                    *:*)
+                        if [ -z "$refs_arg" ]; then
+                            refs_arg=":${change#*:}"
+                            change=${change%%:*}
+                        fi
+                        ;;
+                    *) break ;;
+                esac
+            done
+            $FUNCNAME fetch $change \
+                && git $command $pre_args FETCH_HEAD$refs_arg $post_args \
+                || return 1
+            ;;
+    esac
+}
+
+function cmrebase() {
+    local repo=$1
+    local refs=$2
+    local pwd="$(pwd)"
+    local dir="$(gettop)/$repo"
+
+    if [ -z $repo ] || [ -z $refs ]; then
+        echo "CyanogenMod Gerrit Rebase Usage: "
+        echo "      cmrebase <path to project> <patch IDs on Gerrit>"
+        echo "      The patch IDs appear on the Gerrit commands that are offered."
+        echo "      They consist on a series of numbers and slashes, after the text"
+        echo "      refs/changes. For example, the ID in the following command is 26/8126/2"
+        echo ""
+        echo "      git[...]ges_apps_Camera refs/changes/26/8126/2 && git cherry-pick FETCH_HEAD"
+        echo ""
+        return
+    fi
+
+    if [ ! -d $dir ]; then
+        echo "Directory $dir doesn't exist in tree."
+        return
+    fi
+    cd $dir
+    repo=$(cat .git/config  | grep git://github.com | awk '{ print $NF }' | sed s#git://github.com/##g)
+    echo "Starting branch..."
+    repo start tmprebase .
+    echo "Bringing it up to date..."
+    repo sync .
+    echo "Fetching change..."
+    git fetch "http://review.androidarmv6.org/$repo" "refs/changes/$refs" && git cherry-pick FETCH_HEAD
+    if [ "$?" != "0" ]; then
+        echo "Error cherry-picking. Not uploading!"
+        return
+    fi
+    echo "Uploading..."
+    repo upload .
+    echo "Cleaning up..."
+    repo abandon tmprebase .
+    cd $pwd
 }
 
 function mka() {
@@ -1704,10 +2270,10 @@ function repolastsync() {
 function reposync() {
     case `uname -s` in
         Darwin)
-            repo sync -j 4 "$@" > /dev/null
+            repo sync -j 4 "$@"
             ;;
         *)
-            schedtool -B -n 1 -e ionice -n 1 `which repo` sync -j 4 "$@" > /dev/null
+            schedtool -B -n 1 -e ionice -n 1 `which repo` sync -j 4 "$@"
             ;;
     esac
 }
@@ -1737,7 +2303,7 @@ function dopush()
         echo "Device Found."
     fi
 
-    if (adb shell cat /system/build.prop | grep -q "ro.carbon.device=$CARBON_BUILD");
+    if (adb shell cat /system/build.prop | grep -q "ro.cm.device=$CM_BUILD");
     then
     # retrieve IP and PORT info if we're using a TCP connection
     TCPIPPORT=$(adb devices | egrep '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+[^0-9]+' \
@@ -1836,7 +2402,7 @@ EOF
     rm -f $OUT/.log
     return 0
     else
-        echo "The connected device does not appear to be $CARBON_BUILD, run away!"
+        echo "The connected device does not appear to be $CM_BUILD, run away!"
     fi
 }
 
@@ -1853,7 +2419,7 @@ function repopick() {
 function fixup_common_out_dir() {
     common_out_dir=$(get_build_var OUT_DIR)/target/common
     target_device=$(get_build_var TARGET_DEVICE)
-    if [ ! -z $CARBON_FIXUP_COMMON_OUT ]; then
+    if [ ! -z $CM_FIXUP_COMMON_OUT ]; then
         if [ -d ${common_out_dir} ] && [ ! -L ${common_out_dir} ]; then
             mv ${common_out_dir} ${common_out_dir}-${target_device}
             ln -s ${common_out_dir}-${target_device} ${common_out_dir}
@@ -1909,8 +2475,7 @@ if [ "x$SHELL" != "x/bin/bash" ]; then
 fi
 
 # Execute the contents of any vendorsetup.sh files we can find.
-for f in `test -d device && find device -maxdepth 4 -name 'vendorsetup.sh' 2> /dev/null` \
-         `test -d vendor && find vendor -maxdepth 4 -name 'vendorsetup.sh' 2> /dev/null`
+for f in `/bin/ls vendor/*/vendorsetup.sh vendor/*/*/vendorsetup.sh device/*/*/vendorsetup.sh 2> /dev/null`
 do
     echo "including $f"
     . $f
@@ -1919,7 +2484,7 @@ unset f
 
 # Add completions
 check_bash_version && {
-    dirs="sdk/bash_completion vendor/carbon/bash_completion"
+    dirs="sdk/bash_completion vendor/cm/bash_completion"
     for dir in $dirs; do
     if [ -d ${dir} ]; then
         for f in `/bin/ls ${dir}/[a-z]*.bash 2> /dev/null`; do
