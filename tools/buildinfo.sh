@@ -54,6 +54,6 @@ echo "ro.build.characteristics=$TARGET_AAPT_CHARACTERISTICS"
 
 echo "ro.cm.device=$CM_DEVICE"
 echo "ro.cxr.version=$VERSION"
-echo "ro.build.type="$CXR_BUILDTYPE"
+echo "ro.build.type=$CXR_BUILDTYPE"
 
 echo "# end build properties"
